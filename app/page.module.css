@@ -2,8 +2,8 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
-  color: white;
+  background: linear-gradient(135deg, #0B0B0D 0%, #141417 100%);
+  color: #E5E5EA;
   position: relative;
 }
 
@@ -61,7 +61,7 @@
   font-size: 1.2rem;
   line-height: 1.6;
   margin-bottom: 3rem;
-  color: rgba(255, 255, 255, 0.8);
+  color: #C7C7CC;
   font-weight: 300;
 }
 
@@ -104,9 +104,9 @@
 }
 
 .joinButton {
-  background: #f7d954;
-  color: #000;
-  border: none;
+  background: #000000;
+  color: #FFFFFF;
+  border: 2px solid #FFFFFF;
   padding: 1rem 3rem;
   font-size: 1rem;
   font-weight: 700;
@@ -116,11 +116,11 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-top: 1rem;
-  box-shadow: 0 4px 20px rgba(247, 217, 84, 0.3);
+  box-shadow: 0 4px 20px rgba(255, 255, 255, 0.2);
 }
 
 .joinButton:hover {
-  background: #f5d73a;
+  background: rgba(255, 255, 255, 0.1);
   transform: translateY(-2px);
-  box-shadow: 0 6px 25px rgba(247, 217, 84, 0.4);
+  box-shadow: 0 6px 25px rgba(255, 255, 255, 0.3);
 }
