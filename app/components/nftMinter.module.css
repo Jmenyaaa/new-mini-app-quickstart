@@ -101,6 +101,37 @@
   border: 1px solid rgba(255, 107, 107, 0.3);
 }
 
+.statusBox {
+  margin: 1rem 0;
+  padding: 0.9rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid #222228;
+  border-radius: 12px;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+  color: #E5E5EA;
+}
+
+.statusRow + .statusRow {
+  margin-top: 0.5rem;
+}
+
+.statusMuted {
+  color: #C7C7CC;
+  text-align: right;
+}
+
+.statusLink {
+  color: #E5E5EA;
+  text-decoration: underline;
+}
+
 .button {
   width: 100%;
   padding: 1rem;

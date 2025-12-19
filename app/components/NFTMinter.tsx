@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react';
 import MintNFTAbi from '../../public/MintNFT.abi.json' assert { type: 'json' };
-import { useAccount, useConnect } from 'wagmi';
+import { useAccount, useConnect, usePublicClient, useWriteContract } from 'wagmi';
 import { metaMask, coinbaseWallet } from '@wagmi/connectors';
 import styles from './nftMinter.module.css';
 
@@ -26,11 +26,32 @@ interface NFTMinterProps {
 
 export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
   const { address } = useAccount();
+  const publicClient = usePublicClient();
+  const writeContractResult = useWriteContract();
   const connectResult = useConnect();
   const { connect } = connectResult;
   const connectError = connectResult.error;
   const [connectingId, setConnectingId] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string>('');
+
+  type MintStage = 'idle' | 'uploading' | 'awaitingWallet' | 'txPending' | 'done';
+  const [mintStage, setMintStage] = useState<MintStage>('idle');
+  const [mintIpfsUrl, setMintIpfsUrl] = useState<string>('');
+  const [mintTxHash, setMintTxHash] = useState<`0x${string}` | ''>('');
+
+  const stageText = (stage: MintStage) => {
+    switch (stage) {
+      case 'uploading':
+        return 'Загрузка на IPFS...';
+      case 'awaitingWallet':
+        return 'Подтвердите транзакцию в кошельке...';
+      case 'txPending':
+        return 'Транзакция в сети, ждём подтверждения...';
+      case 'done':
+        return 'Готово: NFT создан!';
+      default:
+        return '';
+    }
+  };
   const formatError = (e: unknown) => {
     if (!e) return '';
     if (typeof e === 'string') return e;
@@ -95,7 +116,9 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
 
   const handleMint = async () => {
     setError('');
-    setSuccessMsg('');
+    setMintStage('idle');
+    setMintIpfsUrl('');
+    setMintTxHash('');
     if (!processedImage) {
       setError('Сначала примените градиент');
       return;
@@ -106,7 +129,7 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
     }
     setIsMinting(true);
     try {
-      setSuccessMsg('Загружаю изображение на IPFS...');
+      setMintStage('uploading');
       const response = await fetch(processedImage);
       const blob = await response.blob();
       const file = new File([blob], 'gradient-nft.png', { type: 'image/png' });
@@ -127,27 +150,31 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
         throw new Error(uploadData.error || uploadData.detail || 'Unknown upload error');
       }
       const ipfsUrl = uploadData.ipfsUrl || (uploadData.result && (uploadData.result.url || uploadData.result.ipnft)) || null;
-      setSuccessMsg('IPFS успешно! Минт NFT...');
+      if (!ipfsUrl || typeof ipfsUrl !== 'string') {
+        throw new Error('IPFS URL не получен');
+      }
+      setMintIpfsUrl(ipfsUrl);
+
+      setMintStage('awaitingWallet');
 
       // On-chain mint
       const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
       if (!contractAddress) throw new Error('Контракт не настроен');
 
-      // @ts-expect-error dynamic import for wagmi writeContractAsync
-      const { writeContractAsync } = await import('wagmi');
-      const txHash = await writeContractAsync({
+      const txHash = await writeContractResult.writeContractAsync({
         address: contractAddress as `0x${string}`,
         abi: MintNFTAbi,
         functionName: 'mintNFT',
         args: [address, ipfsUrl],
       });
-      setSuccessMsg('Транзакция отправлена, ждём подтверждения...');
 
-      // @ts-expect-error dynamic import for wagmi waitForTransactionReceipt
-      const { waitForTransactionReceipt } = await import('wagmi');
-      await waitForTransactionReceipt({ hash: txHash });
+      setMintTxHash(txHash);
+      setMintStage('txPending');
 
-      setSuccessMsg('NFT успешно создан!');
+      if (!publicClient) throw new Error('Public client не настроен');
+      await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+      setMintStage('done');
       if (onMintComplete) {
         onMintComplete(ipfsUrl, `token-${Date.now()}`);
       }
@@ -161,7 +188,7 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
       else if (typeof err === 'string') msg += ': ' + err;
       else if (err && typeof err === 'object') msg += ': ' + JSON.stringify(err);
       setError(msg);
-      setSuccessMsg('');
+      setMintStage('idle');
     } finally {
       setIsMinting(false);
     }
@@ -278,7 +305,31 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
       )}
 
       {error && <p className={styles.error}>{error}</p>}
-      {successMsg && <p className={styles.success}>{successMsg}</p>}
+
+      {mintStage !== 'idle' && (
+        <div className={styles.statusBox}>
+          <div className={styles.statusRow}>
+            <span>Статус</span>
+            <span className={styles.statusMuted}>{stageText(mintStage)}</span>
+          </div>
+          {mintIpfsUrl && (
+            <div className={styles.statusRow}>
+              <span>IPFS</span>
+              <a className={styles.statusLink} href={`https://gateway.lighthouse.storage/ipfs/${mintIpfsUrl.replace('ipfs://', '')}`} target="_blank" rel="noopener noreferrer">
+                Открыть
+              </a>
+            </div>
+          )}
+          {mintTxHash && (
+            <div className={styles.statusRow}>
+              <span>Tx</span>
+              <a className={styles.statusLink} href={`https://basescan.org/tx/${mintTxHash}`} target="_blank" rel="noopener noreferrer">
+                Basescan
+              </a>
+            </div>
+          )}
+        </div>
+      )}
 
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
