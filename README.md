@@ -37,6 +37,14 @@ Create a `.env.local` file and add your environment variables:
 NEXT_PUBLIC_PROJECT_NAME="Your App Name"
 NEXT_PUBLIC_ONCHAINKIT_API_KEY=<Replace-WITH-YOUR-CDP-API-KEY>
 NEXT_PUBLIC_URL=
+
+# IPFS uploads (for NFT images + metadata)
+# Get from https://files.lighthouse.storage/ -> API key section
+LIGHTHOUSE_API_KEY=
+
+# Deployed contract + chain
+NEXT_PUBLIC_CONTRACT_ADDRESS=
+NEXT_PUBLIC_CHAIN_ID=8453
 ```
 
 ### 4. Run locally:

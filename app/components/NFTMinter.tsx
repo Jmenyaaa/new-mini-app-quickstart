@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import MintNFTAbi from '../../public/MintNFT.abi.json' assert { type: 'json' };
 import { useAccount, useConnect } from 'wagmi';
 import { metaMask, coinbaseWallet } from '@wagmi/connectors';
 import styles from './nftMinter.module.css';
@@ -29,6 +30,7 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
   const { connect } = connectResult;
   const connectError = connectResult.error;
   const [connectingId, setConnectingId] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string>('');
   const formatError = (e: unknown) => {
     if (!e) return '';
     if (typeof e === 'string') return e;
@@ -93,20 +95,21 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
 
   const handleMint = async () => {
     setError('');
-    
+    setSuccessMsg('');
     if (!processedImage) {
       setError('Сначала примените градиент');
       return;
     }
-
-    // Allow IPFS upload even if wallet is not connected — on-chain mint can be done later
-
+    if (!address) {
+      setError('Подключите кошелёк для минта NFT');
+      return;
+    }
     setIsMinting(true);
     try {
+      setSuccessMsg('Загружаю изображение на IPFS...');
       const response = await fetch(processedImage);
       const blob = await response.blob();
       const file = new File([blob], 'gradient-nft.png', { type: 'image/png' });
-
       const formData = new FormData();
       formData.append('file', file);
       formData.append('metadata', JSON.stringify({
@@ -115,31 +118,50 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
         gradient: selectedGradient,
         imageSize: { width: canvasRef.current?.width, height: canvasRef.current?.height },
       }));
-
       const uploadRes = await fetch('/api/ipfs/upload', {
         method: 'POST',
         body: formData,
       });
-
       const uploadData = await uploadRes.json();
       if (!uploadData.success) {
         throw new Error(uploadData.error || uploadData.detail || 'Unknown upload error');
       }
-
       const ipfsUrl = uploadData.ipfsUrl || (uploadData.result && (uploadData.result.url || uploadData.result.ipnft)) || null;
+      setSuccessMsg('IPFS успешно! Минт NFT...');
 
-      alert(`✅ Изображение загружено на IPFS!\nIPFS URL: ${ipfsUrl}`);
-      
+      // On-chain mint
+      const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
+      if (!contractAddress) throw new Error('Контракт не настроен');
+
+      // @ts-expect-error dynamic import for wagmi writeContractAsync
+      const { writeContractAsync } = await import('wagmi');
+      const txHash = await writeContractAsync({
+        address: contractAddress as `0x${string}`,
+        abi: MintNFTAbi,
+        functionName: 'mintNFT',
+        args: [address, ipfsUrl],
+      });
+      setSuccessMsg('Транзакция отправлена, ждём подтверждения...');
+
+      // @ts-expect-error dynamic import for wagmi waitForTransactionReceipt
+      const { waitForTransactionReceipt } = await import('wagmi');
+      await waitForTransactionReceipt({ hash: txHash });
+
+      setSuccessMsg('NFT успешно создан!');
       if (onMintComplete) {
         onMintComplete(ipfsUrl, `token-${Date.now()}`);
       }
-
       setSelectedFile(null);
       setImagePreview('');
       setProcessedImage('');
     } catch (err) {
       console.error('Mint error:', err);
-      setError('Ошибка при создании NFT');
+      let msg = 'Ошибка при создании NFT';
+      if (err instanceof Error) msg += ': ' + err.message;
+      else if (typeof err === 'string') msg += ': ' + err;
+      else if (err && typeof err === 'object') msg += ': ' + JSON.stringify(err);
+      setError(msg);
+      setSuccessMsg('');
     } finally {
       setIsMinting(false);
     }
@@ -149,6 +171,53 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
     <div className={styles.container}>
       <h2 className={styles.title}>🎨 Создай свой Gradient NFT</h2>
 
+      {/* Информация о коллекции */}
+      <div className={styles.section}>
+        <div className={styles.collectionInfo}>
+          <strong>Коллекция:</strong> Gradient NFT<br />
+          <strong>Сеть:</strong> Base<br />
+          <strong>Контракт:</strong> <span style={{wordBreak:'break-all'}}>{process.env.NEXT_PUBLIC_CONTRACT_ADDRESS}</span><br />
+          <a href={`https://opensea.io/assets/base/${process.env.NEXT_PUBLIC_CONTRACT_ADDRESS}`} target="_blank" rel="noopener noreferrer">Opensea</a>
+        </div>
+      </div>
+
+      {/* Кнопка подключения кошелька всегда видна */}
+      <div className={styles.section}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className={styles.connectButton}
+            onClick={async () => {
+              try {
+                setConnectingId('metaMask');
+                await connect({ connector: metaMask() });
+              } finally {
+                setConnectingId(null);
+              }
+            }}
+            disabled={Boolean(connectingId) || !!address}
+          >
+            {address ? 'MetaMask подключён' : connectingId === 'metaMask' ? 'Подключаю...' : 'MetaMask'}
+          </button>
+          <button
+            className={styles.connectButton}
+            onClick={async () => {
+              try {
+                setConnectingId('coinbaseWallet');
+                await connect({ connector: coinbaseWallet() });
+              } finally {
+                setConnectingId(null);
+              }
+            }}
+            disabled={Boolean(connectingId) || !!address}
+          >
+            {address ? 'Coinbase подключён' : connectingId === 'coinbaseWallet' ? 'Подключаю...' : 'Coinbase Wallet'}
+          </button>
+        </div>
+        {connectError && <p className={styles.error}>Ошибка подключения: {formatError(connectError)}</p>}
+        {address && <p className={styles.label}>Кошелёк: {address}</p>}
+      </div>
+
+      {/* Загрузка фото */}
       <div className={styles.section}>
         <label className={styles.fileInput}>
           <input
@@ -160,43 +229,6 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
           <span>{selectedFile ? '✓ Фото выбрано' : '📸 Выберите фото'}</span>
         </label>
       </div>
-
-      {!address && (
-        <div className={styles.section}>
-          <p className={styles.label}>Подключите кошелёк для on‑chain действий</p>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              className={styles.connectButton}
-              onClick={async () => {
-                try {
-                  setConnectingId('metaMask');
-                  await connect({ connector: metaMask() });
-                } finally {
-                  setConnectingId(null);
-                }
-              }}
-              disabled={Boolean(connectingId)}
-            >
-              {connectingId === 'metaMask' ? 'Подключаю...' : 'MetaMask'}
-            </button>
-            <button
-              className={styles.connectButton}
-              onClick={async () => {
-                try {
-                  setConnectingId('coinbaseWallet');
-                  await connect({ connector: coinbaseWallet() });
-                } finally {
-                  setConnectingId(null);
-                }
-              }}
-              disabled={Boolean(connectingId)}
-            >
-              {connectingId === 'coinbaseWallet' ? 'Подключаю...' : 'Coinbase Wallet'}
-            </button>
-          </div>
-          {connectError && <p className={styles.error}>Ошибка подключения: {formatError(connectError)}</p>}
-        </div>
-      )}
 
       {imagePreview && (
         <div className={styles.section}>
@@ -246,6 +278,7 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
       )}
 
       {error && <p className={styles.error}>{error}</p>}
+      {successMsg && <p className={styles.success}>{successMsg}</p>}
 
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
@@ -255,7 +288,7 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
           onClick={handleMint}
           disabled={isMinting}
         >
-          {isMinting ? '⏳ Создаю NFT...' : address ? '🚀 MINT NFT' : '⬆️ Загрузить на IPFS'}
+          {isMinting ? '⏳ Минт NFT...' : '🚀 MINT NFT'}
         </button>
       )}
     </div>

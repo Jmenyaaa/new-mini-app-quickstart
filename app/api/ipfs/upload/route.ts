@@ -1,7 +1,5 @@
-import { NFTStorage } from 'nft.storage';
 import { NextRequest, NextResponse } from 'next/server';
-
-const NFT_STORAGE_TOKEN = process.env.NFT_STORAGE_TOKEN || '';
+import lighthouse from '@lighthouse-web3/sdk';
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,30 +21,52 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (!NFT_STORAGE_TOKEN) {
-      console.error('NFT_STORAGE_TOKEN missing in environment');
-      return NextResponse.json({ error: 'NFT_STORAGE_TOKEN not configured' }, { status: 500 });
+    const apiKey = (process.env.LIGHTHOUSE_API_KEY ?? '').trim();
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'LIGHTHOUSE_API_KEY not configured' },
+        { status: 500 }
+      );
     }
 
-    const client = new NFTStorage({ token: NFT_STORAGE_TOKEN });
+    // 1) Upload image
+    const imageName = typeof metadata.name === 'string' && metadata.name.length > 0 ? `${metadata.name}.png` : 'gradient-nft.png';
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const imageUpload = await lighthouse.uploadBuffer(fileBuffer, apiKey);
+    const imageCid = imageUpload?.data?.Hash;
+    if (!imageCid || typeof imageCid !== 'string') {
+      return NextResponse.json(
+        { error: 'Failed to upload image to IPFS', detail: imageUpload },
+        { status: 500 }
+      );
+    }
 
-    const result: unknown = await client.store({
+    // 2) Upload metadata JSON
+    const metadataJson = {
       name: (metadata.name as string) || 'Gradient NFT',
       description: (metadata.description as string) || 'Generated with gradient effect',
-      // `file` is a Blob (from formData); NFTStorage accepts Blob/File
-      image: file,
+      image: `ipfs://${imageCid}`,
       properties: {
         gradient: metadata.gradient,
         originalImageSize: metadata.imageSize,
+        originalFile: {
+          mimeType: file.type,
+          size: file.size,
+          name: imageName,
+        },
       },
-    });
+    };
+    const metadataUpload = await lighthouse.uploadText(JSON.stringify(metadataJson), apiKey, 'metadata.json');
+    const metadataCid = metadataUpload?.data?.Hash;
+    if (!metadataCid || typeof metadataCid !== 'string') {
+      return NextResponse.json(
+        { error: 'Failed to upload metadata to IPFS', detail: metadataUpload },
+        { status: 500 }
+      );
+    }
 
-    const asResult = result as Record<string, unknown>;
-    const ipnft = (asResult?.ipnft as string | undefined) || (asResult?.ipfsHash as string | undefined) || null;
-    const urlCandidate = (asResult?.url as string | undefined) || null;
-    const ipfsUrl = ipnft ? `ipfs://${ipnft}` : urlCandidate;
-
-    return NextResponse.json({ success: true, ipfsUrl, result: asResult });
+    const ipfsUrl = `ipfs://${metadataCid}`;
+    return NextResponse.json({ success: true, ipfsUrl, result: { imageCid, metadataCid } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('IPFS upload error:', message, error);
