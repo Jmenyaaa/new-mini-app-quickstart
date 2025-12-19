@@ -145,11 +145,21 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
         method: 'POST',
         body: formData,
       });
-      const uploadData = await uploadRes.json();
-      if (!uploadData.success) {
-        throw new Error(uploadData.error || uploadData.detail || 'Unknown upload error');
+
+      const contentType = uploadRes.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await uploadRes.text();
+        throw new Error(`IPFS upload returned non-JSON (${uploadRes.status}): ${text.slice(0, 200) || 'empty response'}`);
       }
-      const ipfsUrl = uploadData.ipfsUrl || (uploadData.result && (uploadData.result.url || uploadData.result.ipnft)) || null;
+
+      const uploadData: unknown = await uploadRes.json();
+      const asObj = uploadData as Record<string, unknown>;
+      if (!uploadRes.ok || asObj.success !== true) {
+        const errMsg = (asObj.error as string | undefined) || (asObj.detail as string | undefined) || `Upload failed (${uploadRes.status})`;
+        throw new Error(errMsg);
+      }
+
+      const ipfsUrl = (asObj.ipfsUrl as string | undefined) || null;
       if (!ipfsUrl || typeof ipfsUrl !== 'string') {
         throw new Error('IPFS URL не получен');
       }

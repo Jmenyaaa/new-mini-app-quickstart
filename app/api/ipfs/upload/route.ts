@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import lighthouse from '@lighthouse-web3/sdk';
+
+export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,14 +30,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Import inside handler to avoid top-level runtime/module issues
+    const { default: lighthouse } = await import('@lighthouse-web3/sdk');
+
     // 1) Upload image
     const imageName = typeof metadata.name === 'string' && metadata.name.length > 0 ? `${metadata.name}.png` : 'gradient-nft.png';
     const fileBuffer = Buffer.from(await file.arrayBuffer());
-    const imageUpload = await lighthouse.uploadBuffer(fileBuffer, apiKey);
-    const imageCid = imageUpload?.data?.Hash;
+    const imageUpload: unknown = await lighthouse.uploadBuffer(fileBuffer, apiKey);
+    const imageUploadData = (imageUpload as { data?: unknown } | null)?.data;
+    const imageCid = (imageUploadData as { Hash?: unknown } | null)?.Hash;
     if (!imageCid || typeof imageCid !== 'string') {
       return NextResponse.json(
-        { error: 'Failed to upload image to IPFS', detail: imageUpload },
+        { error: 'Failed to upload image to IPFS', detail: imageUploadData ?? imageUpload },
         { status: 500 }
       );
     }
@@ -56,11 +61,12 @@ export async function POST(req: NextRequest) {
         },
       },
     };
-    const metadataUpload = await lighthouse.uploadText(JSON.stringify(metadataJson), apiKey, 'metadata.json');
-    const metadataCid = metadataUpload?.data?.Hash;
+    const metadataUpload: unknown = await lighthouse.uploadText(JSON.stringify(metadataJson), apiKey, 'metadata.json');
+    const metadataUploadData = (metadataUpload as { data?: unknown } | null)?.data;
+    const metadataCid = (metadataUploadData as { Hash?: unknown } | null)?.Hash;
     if (!metadataCid || typeof metadataCid !== 'string') {
       return NextResponse.json(
-        { error: 'Failed to upload metadata to IPFS', detail: metadataUpload },
+        { error: 'Failed to upload metadata to IPFS', detail: metadataUploadData ?? metadataUpload },
         { status: 500 }
       );
     }
