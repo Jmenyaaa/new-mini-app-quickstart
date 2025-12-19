@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { useAccount } from 'wagmi';
+import { useAccount, useConnect } from 'wagmi';
+import { metaMask, coinbaseWallet } from '@wagmi/connectors';
 import styles from './nftMinter.module.css';
 
 interface GradientPreset {
@@ -24,6 +25,16 @@ interface NFTMinterProps {
 
 export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
   const { address } = useAccount();
+  const connectResult = useConnect();
+  const { connect } = connectResult;
+  const connectError = connectResult.error;
+  const [connectingId, setConnectingId] = useState<string | null>(null);
+  const formatError = (e: unknown) => {
+    if (!e) return '';
+    if (typeof e === 'string') return e;
+    if (e instanceof Error) return e.message;
+    return String((e as Record<string, unknown>)?.message ?? e);
+  };
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
   const [selectedGradient, setSelectedGradient] = useState<[string, string]>(GRADIENT_PRESETS[0].colors);
@@ -149,6 +160,43 @@ export default function NFTMinter({ onMintComplete }: NFTMinterProps) {
           <span>{selectedFile ? '✓ Фото выбрано' : '📸 Выберите фото'}</span>
         </label>
       </div>
+
+      {!address && (
+        <div className={styles.section}>
+          <p className={styles.label}>Подключите кошелёк для on‑chain действий</p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className={styles.connectButton}
+              onClick={async () => {
+                try {
+                  setConnectingId('metaMask');
+                  await connect({ connector: metaMask() });
+                } finally {
+                  setConnectingId(null);
+                }
+              }}
+              disabled={Boolean(connectingId)}
+            >
+              {connectingId === 'metaMask' ? 'Подключаю...' : 'MetaMask'}
+            </button>
+            <button
+              className={styles.connectButton}
+              onClick={async () => {
+                try {
+                  setConnectingId('coinbaseWallet');
+                  await connect({ connector: coinbaseWallet() });
+                } finally {
+                  setConnectingId(null);
+                }
+              }}
+              disabled={Boolean(connectingId)}
+            >
+              {connectingId === 'coinbaseWallet' ? 'Подключаю...' : 'Coinbase Wallet'}
+            </button>
+          </div>
+          {connectError && <p className={styles.error}>Ошибка подключения: {formatError(connectError)}</p>}
+        </div>
+      )}
 
       {imagePreview && (
         <div className={styles.section}>

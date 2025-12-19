@@ -115,6 +115,15 @@
   margin-bottom: 1rem;
 }
 
+.connectButton {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px dashed rgba(255,255,255,0.12);
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
 .button:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.15);
   border-color: #C7C7CC;
